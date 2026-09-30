@@ -1,0 +1,68 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-check_my_link}
+      POSTGRES_USER: ${POSTGRES_USER:-checklink}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-checklink} -d ${POSTGRES_DB:-check_my_link}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+  backend:
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://checklink:${POSTGRES_PASSWORD}@db:5432/check_my_link}
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_WEB_RISK_API_KEY: ${GOOGLE_WEB_RISK_API_KEY:-}
+      VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
+      REQUIRE_EGRESS_PROXY: ${REQUIRE_EGRESS_PROXY:-false}
+      EGRESS_PROXY_URL: ${EGRESS_PROXY_URL:-}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      RATE_LIMIT_FAIL_OPEN: ${RATE_LIMIT_FAIL_OPEN:-false}
+      SCAN_RATE_LIMIT: ${SCAN_RATE_LIMIT:-10}
+      SCAN_RATE_WINDOW_SECONDS: ${SCAN_RATE_WINDOW_SECONDS:-60}
+      MAX_REQUEST_BODY_BYTES: ${MAX_REQUEST_BODY_BYTES:-16384}
+      MAX_URL_LENGTH: ${MAX_URL_LENGTH:-4096}
+      MAX_SCAN_TIMEOUT_SECONDS: ${MAX_SCAN_TIMEOUT_SECONDS:-180}
+      MAX_CONCURRENT_SCANS: ${MAX_CONCURRENT_SCANS:-2}
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+  worker:
+    build: .
+    command: sh -c "celery -A app.worker.celery worker --loglevel=INFO --concurrency=$${MAX_CONCURRENT_SCANS:-2} --max-tasks-per-child=50"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://checklink:${POSTGRES_PASSWORD}@db:5432/check_my_link}
+      REDIS_URL: redis://redis:6379/0
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_WEB_RISK_API_KEY: ${GOOGLE_WEB_RISK_API_KEY:-}
+      VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
+      REQUIRE_EGRESS_PROXY: ${REQUIRE_EGRESS_PROXY:-false}
+      EGRESS_PROXY_URL: ${EGRESS_PROXY_URL:-}
+      MAX_SCAN_TIMEOUT_SECONDS: ${MAX_SCAN_TIMEOUT_SECONDS:-180}
+      MAX_CONCURRENT_SCANS: ${MAX_CONCURRENT_SCANS:-2}
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+volumes:
+  postgres_data:
+  redis_data:
