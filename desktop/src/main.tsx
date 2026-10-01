@@ -1,0 +1,62 @@
+import React,{useEffect,useState} from "react";
+import {createRoot} from "react-dom/client";
+import "./style.css";
+
+type Finding={name?:string;severity?:string;reason?:string};
+type Scan={id?:string;scan_id?:string;status:string;|null;result?:{url?:string;risk?:{risk_score?:number;confidence_score?:number;status_label?:string;status?:string;signals?:Finding[]};evidence?:{http?:{final_url?:string};browser?:{final_url?:string}}}|null};
+const API=(import.meta.env.VITE_CHECK_MY_LINK_DESKTOP_API||"https://check.techniac.gr").replace(/\/$/,"");
+function App(){const[url,setUrl]=useState("");const[state,setState]=useState("idle");const[scan,setScan]=useState<Scan|null>(null);const[error,setError]=useState("");
+useEffect(()=>{
+  if(state!=="scanning"||!scan)return;
+
+  const scanId=scan.scan_id||scan.id;
+  if(!scanId)return;
+
+  let stop=false;
+
+  const poll=async()=>{
+    try{
+      const r=await fetch(
+        `${API}/api/desktop/scan/${encodeURIComponent(scanId)}`,
+        {
+          cache:"no-store",
+          headers:{"X-DP-Desktop":"1"}
+        }
+      );
+
+      const d=await r.json();
+
+      if(stop)return;
+
+      setScan({
+        ...d,
+        scan_id:d.scan_id||d.id||scanId
+      });
+
+      if(["COMPLETED","PARTIAL"].includes(d.status)){
+        setState("result");
+      }else if(d.status==="FAILED"){
+        setError(d.error||"Ο έλεγχος απέτυχε.");
+        setState("failed");
+      }
+    }catch(e){
+      if(!stop){
+        setError("Δεν ήταν δυνατή η επικοινωνία με το Check My Link.");
+        setState("failed");
+      }
+    }
+  };
+
+  poll();
+
+  const t=window.setInterval(poll,1200);
+
+  return()=>{
+    stop=true;
+    clearInterval(t);
+  };
+},[state,scan?.scan_id,scan?.id]);
+const start=async()=>{const v=url.trim();if(!/^https?:\/\//i.test(v)){setError("Χρησιμοποίησε URL που αρχίζει με http:// ή https://.");setState("failed");return}setError("");setState("scanning");setScan(null);try{const r=await fetch(`${API}/api/desktop/scan`,{method:"POST",headers:{"Content-Type":"application/json","X-DP-Desktop":"1"},body:JSON.stringify({url:v})});const d=await r.json();if(!r.ok)throw new Error(d.detail||"Αποτυχία έναρξης ελέγχου.");setScan(d)}catch(e){setError(e instanceof Error?e.message:"Αποτυχία σύνδεσης.");setState("failed")}};
+const reset=()=>{setUrl("");setScan(null);setError("");setState("idle")};const risk=scan?.result?.risk;const score=Math.round(Math.max(0,Math.min(100,risk?.risk_score??0)));const conf=Math.round(Math.max(0,Math.min(100,risk?.confidence_score??0)));const final=scan?.result?.evidence?.http?.final_url||scan?.result?.evidence?.browser?.final_url||scan?.result?.url||url;
+return <main><header><div className="brand"><b>✓</b><div><strong>DP Hellas Check My Link</strong><small>WINDOWS SECURITY CLIENT</small></div></div><span className="secure">CLOUD SECURITY ENGINE</span></header>{state==="idle"&&<section className="hero"><span className="eyebrow">LINK SECURITY</span><h1>Έλεγξε ένα link<br/><em>πριν το ανοίξεις.</em></h1><p>Η εφαρμογή ελέγχει το URL μέσω του ασφαλούς DP Hellas cloud engine.</p><div className="box"><label>URL προς έλεγχο</label><div className="row"><input value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&start()} placeholder="https://example.com/..." autoFocus/><button onClick={start} disabled={!url.trim()}>Έλεγχος Link</button></div><small>Μην εισάγεις κωδικούς ή προσωπικά στοιχεία.</small></div></section>}{state==="scanning"&&<section className="panel"><div className="spinner"/><span className="eyebrow">LIVE SECURITY SCAN</span><h2>Αναλύουμε το link...</h2><code>{url}</code><div className="bar"><i/></div><p>URL → DNS → Threat Intelligence → TLS → Web Analysis → Risk Engine</p></section>}{state==="failed"&&<section className="panel"><span className="eyebrow">SCAN ERROR</span><h2>Δεν ολοκληρώθηκε ο έλεγχος</h2><p>{error}</p><button onClick={reset}>Νέα προσπάθεια</button></section>}{state==="result"&&<section className="result"><div className="resultTop"><div><span className="eyebrow">ΑΠΟΤΕΛΕΣΜΑ</span><h2>Αποτέλεσμα ελέγχου</h2><code>{scan?.result?.url||url}</code></div><button className="secondary" onClick={reset}>Νέος έλεγχος</button></div><div className="grid"><div className="score"><div className="num">{score}<small>/100</small></div><h3>{risk?.status_label||risk?.status||"UNKNOWN"}</h3><p>Confidence <b>{conf}%</b></p><strong className={score>=80?"danger":score>=50?"warn":"ok"}>{score>=80?"ΜΗΝ ΑΝΟΙΞΕΙΣ ΤΟ LINK":score>=50?"ΑΠΑΙΤΕΙΤΑΙ ΠΡΟΣΟΧΗ":"ΕΛΕΓΞΕ ΠΡΙΝ ΑΝΟΙΞΕΙΣ"}</strong></div><div className="details"><h3>Κύρια ευρήματα</h3>{(risk?.signals||[]).slice(0,8).map((f,i)=><div className="finding" key={i}><b>!</b><span><strong>{f.name||"Security signal"}</strong><small>{f.reason||"Εντοπίστηκε σχετικό signal."}</small></span></div>)}{!(risk?.signals?.length)&&<p>Δεν υπάρχουν καταγεγραμμένα signals. Αυτό δεν αποτελεί απόλυτη εγγύηση ασφάλειας.</p>}</div></div><div className="destination"><span>ΤΕΛΙΚΟΣ ΠΡΟΟΡΙΣΜΟΣ</span><code>{final}</code></div></section>}<footer>DP Hellas Check My Link • Windows</footer></main>}
+createRoot(document.getElementById("root")!).render(<App/>);
