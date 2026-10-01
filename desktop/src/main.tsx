@@ -3,7 +3,17 @@ import {createRoot} from "react-dom/client";
 import "./style.css";
 
 type Finding={name?:string;severity?:string;reason?:string};
-type Scan={id?:string;scan_id?:string;status:string;|null;result?:{url?:string;risk?:{risk_score?:number;confidence_score?:number;status_label?:string;status?:string;signals?:Finding[]};evidence?:{http?:{final_url?:string};browser?:{final_url?:string}}}|null};
+type Scan = {
+  id?: string;
+  scan_id?: string;
+  status: string;
+  url?: string;
+  owner_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  error?: string;
+  result?: any;
+};
 const API=(import.meta.env.VITE_CHECK_MY_LINK_DESKTOP_API||"https://check.techniac.gr").replace(/\/$/,"");
 function App(){const[url,setUrl]=useState("");const[state,setState]=useState("idle");const[scan,setScan]=useState<Scan|null>(null);const[error,setError]=useState("");
 useEffect(()=>{
